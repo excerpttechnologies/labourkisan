@@ -43,6 +43,10 @@ const labourSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  totalPresentDays: {
+    type: Number,
+    default: 0
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -59,7 +63,7 @@ labourSchema.pre('save', async function() {
 });
 
 // Create indexes for better query performance
-labourSchema.index({ villageName: 1 });
+// labourSchema.index({ villageName: 1 }); // Already indexed via index: true
 labourSchema.index({ name: 1 });
 labourSchema.index({ isActive: 1 });
 

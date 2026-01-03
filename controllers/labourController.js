@@ -16,6 +16,25 @@ exports.createLabourer = async (req, res, next) => {
       });
     }
 
+    // Check for duplicates (Contact Number or Email)
+    const duplicateQuery = [];
+    if (contactNumber) duplicateQuery.push({ contactNumber });
+    if (email) duplicateQuery.push({ email });
+
+    if (duplicateQuery.length > 0) {
+      const existingLabourer = await Labour.findOne({
+        $or: duplicateQuery,
+        isActive: true
+      });
+
+      if (existingLabourer) {
+        return res.status(400).json({
+          success: false,
+          message: 'This labour already exists (Duplicate mobile or email)'
+        });
+      }
+    }
+
     const newLabourer = new Labour({
       name,
       villageName,
@@ -62,6 +81,40 @@ exports.getAllLabourers = async (req, res, next) => {
 
     const labourers = await Labour.find(query).sort({ name: 1 });
 
+    // Aggregate attendance statistics
+    const attendanceStats = await LabourAssignment.aggregate([
+      {
+        $group: {
+          _id: '$labourId',
+          present: {
+            $sum: {
+              $cond: [{ $eq: ['$attendance.status', 'present'] }, 1, 0]
+            }
+          },
+          absent: {
+            $sum: {
+              $cond: [{ $eq: ['$attendance.status', 'absent'] }, 1, 0]
+            }
+          },
+          pending: {
+            $sum: {
+              $cond: [{ $eq: ['$attendance.status', 'pending'] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Create a map of labourId -> stats
+    const statsMap = {};
+    attendanceStats.forEach(stat => {
+      statsMap[stat._id.toString()] = {
+        present: stat.present,
+        absent: stat.absent,
+        pending: stat.pending
+      };
+    });
+
     // Fetch today's assignments to get attendance status
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
@@ -72,22 +125,26 @@ exports.getAllLabourers = async (req, res, next) => {
       assignmentDate: { $gte: startOfDay, $lte: endOfDay }
     });
 
-    // Create a map of labourId -> attendance status
-    const attendanceMap = {};
+    // Create a map of labourId -> today's attendance status
+    const todayAttendanceMap = {};
     assignmentsToday.forEach(assignment => {
       // Check specific attendance status first, fallback to overall assignment status
       if (assignment.attendance && assignment.attendance.status && assignment.attendance.status !== 'pending') {
-        attendanceMap[assignment.labourId.toString()] = assignment.attendance.status;
+        todayAttendanceMap[assignment.labourId.toString()] = assignment.attendance.status;
       } else {
-        attendanceMap[assignment.labourId.toString()] = 'pending';
+        todayAttendanceMap[assignment.labourId.toString()] = 'pending';
       }
     });
 
     // Attach status to labourers
-    const labourersWithAttendance = labourers.map(labour => ({
-      ...labour.toObject(),
-      todayAttendance: attendanceMap[labour._id.toString()] || null
-    }));
+    const labourersWithAttendance = labourers.map(labour => {
+      const stats = statsMap[labour._id.toString()] || { present: 0, absent: 0, pending: 0 };
+      return {
+        ...labour.toObject(),
+        attendanceSummary: stats,
+        todayAttendance: todayAttendanceMap[labour._id.toString()] || null
+      };
+    });
 
     res.status(200).json({
       success: true,
@@ -215,9 +272,16 @@ exports.confirmAttendance = async (req, res, next) => {
       });
     }
 
+    // Check if labourer exists (although populated, we need to be sure)
+    // We already found assignment, no need to re-check labourer existence unless critical
+
+    // Capture previous status BEFORE updating
+    const previousStatus = assignment.attendance && assignment.attendance.status ? assignment.attendance.status : 'pending';
+    const newStatus = status.toLowerCase();
+
     // Update attendance
     assignment.attendance = {
-      status: status.toLowerCase(),
+      status: newStatus,
       date: date ? new Date(date) : new Date(),
       time: time || new Date().toTimeString().slice(0, 5),
       notes: notes || '',
@@ -226,6 +290,28 @@ exports.confirmAttendance = async (req, res, next) => {
 
     // Update assignment status
     assignment.status = 'confirmed';
+
+    // Handle totalPresentDays count update
+    // Only update if status has changed
+    if (previousStatus !== newStatus) {
+      let incrementBy = 0;
+      
+      // If changing TO present
+      if (newStatus === 'present') {
+        incrementBy = 1;
+      }
+      // If changing FROM present (to absent or anything else)
+      else if (previousStatus === 'present') {
+        incrementBy = -1;
+      }
+      
+      if (incrementBy !== 0) {
+        await Labour.findByIdAndUpdate(assignment.labourId, {
+          $inc: { totalPresentDays: incrementBy }
+        });
+      }
+    }
+
     await assignment.save();
 
     res.status(200).json({
@@ -284,96 +370,4 @@ exports.getAssignmentById = async (req, res, next) => {
   }
 };
 
-/**
- * Seed sample labour data (for testing)
- */
-exports.seedLabourData = async (req, res, next) => {
-  try {
-    // Check if data already exists
-    const existingCount = await Labour.countDocuments();
-    if (existingCount > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Labour data already exists. Use POST /labour to add individual labourers.'
-      });
-    }
-
-    const sampleLabourers = [
-      {
-        name: 'Ramesh Kumar',
-        villageName: 'Village A',
-        contactNumber: '9876543210',
-        email: 'ramesh@example.com',
-        workTypes: ['Plowing', 'Harvesting', 'Sowing'],
-        experience: '10 years of experience in agriculture',
-        availability: 'Available Monday to Saturday',
-        address: 'Village A, Block B, District C',
-        isActive: true
-      },
-      {
-        name: 'Suresh Singh',
-        villageName: 'Village A',
-        contactNumber: '9876543211',
-        workTypes: ['Weeding', 'Irrigation', 'Fertilizer Application'],
-        experience: '7 years',
-        availability: 'Available all week',
-        address: 'Village A, Block B, District C',
-        isActive: true
-      },
-      {
-        name: 'Amit Patel',
-        villageName: 'Village B',
-        contactNumber: '9876543212',
-        email: 'amit@example.com',
-        workTypes: ['Harvesting', 'Plowing'],
-        experience: '5 years in agricultural work',
-        availability: 'Available Monday to Friday',
-        address: 'Village B, Block A, District C',
-        isActive: true
-      },
-      {
-        name: 'Rajesh Verma',
-        villageName: 'Village B',
-        contactNumber: '9876543213',
-        workTypes: ['Sowing', 'Weeding', 'Plowing'],
-        experience: '8 years',
-        availability: 'Available all week',
-        address: 'Village B, Block A, District C',
-        isActive: true
-      },
-      {
-        name: 'Mohan Das',
-        villageName: 'Village C',
-        contactNumber: '9876543214',
-        email: 'mohan@example.com',
-        workTypes: ['Harvesting', 'Irrigation'],
-        experience: '12 years of farming experience',
-        availability: 'Available Monday to Saturday',
-        address: 'Village C, Block C, District C',
-        isActive: true
-      },
-      {
-        name: 'Vikram Singh',
-        villageName: 'Village C',
-        contactNumber: '9876543215',
-        workTypes: ['Plowing', 'Sowing', 'Fertilizer Application'],
-        experience: '6 years',
-        availability: 'Available all week',
-        address: 'Village C, Block C, District C',
-        isActive: true
-      }
-    ];
-
-    const createdLabourers = await Labour.insertMany(sampleLabourers);
-
-    res.status(201).json({
-      success: true,
-      message: `Successfully created ${createdLabourers.length} sample labourers`,
-      count: createdLabourers.length,
-      data: createdLabourers
-    });
-  } catch (error) {
-    next(error);
-  }
-};
 

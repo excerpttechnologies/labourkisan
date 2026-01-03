@@ -159,11 +159,11 @@ employeeSchema.pre('save', async function() {
 });
 
 // Create indexes for better query performance
-employeeSchema.index({ 'personalDetails.email': 1 });
-employeeSchema.index({ 'personalDetails.mobileNumber': 1 });
-employeeSchema.index({ 'employmentDetails.employeeId': 1 });
-employeeSchema.index({ 'identityAndCompliance.aadhaarNumber': 1 });
-employeeSchema.index({ 'identityAndCompliance.panNumber': 1 });
+// employeeSchema.index({ 'personalDetails.email': 1 }); // Already indexed via unique: true
+// employeeSchema.index({ 'personalDetails.mobileNumber': 1 }); // Already indexed via unique: true
+// employeeSchema.index({ 'employmentDetails.employeeId': 1 }); // Already indexed via unique: true
+// employeeSchema.index({ 'identityAndCompliance.aadhaarNumber': 1 }); // Already indexed via unique: true
+// employeeSchema.index({ 'identityAndCompliance.panNumber': 1 }); // Already indexed via unique: true
 employeeSchema.index({ 'employmentDetails.department': 1 });
 
 module.exports = mongoose.model('Employee', employeeSchema);

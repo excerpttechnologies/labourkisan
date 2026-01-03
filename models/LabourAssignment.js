@@ -65,7 +65,7 @@ labourAssignmentSchema.pre('save', async function() {
 
 // Create indexes
 labourAssignmentSchema.index({ labourId: 1, farmerId: 1 });
-labourAssignmentSchema.index({ farmerId: 1 });
+// labourAssignmentSchema.index({ farmerId: 1 }); // Already indexed via index: true
 labourAssignmentSchema.index({ status: 1 });
 
 module.exports = mongoose.model('LabourAssignment', labourAssignmentSchema);
