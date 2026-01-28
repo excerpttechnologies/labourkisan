@@ -6,7 +6,7 @@ const LabourAssignment = require('../models/LabourAssignment');
  */
 exports.createLabourer = async (req, res, next) => {
   try {
-    const { name, villageName, contactNumber, email, workTypes, experience, availability, address } = req.body;
+    const { name, villageName, contactNumber, email, workTypes, experience, availability, address, state, district, taluku } = req.body;
 
     // Validate required fields
     if (!name || !villageName) {
@@ -44,6 +44,9 @@ exports.createLabourer = async (req, res, next) => {
       experience,
       availability,
       address,
+      state,
+      district,
+      taluku,
       isActive: true
     });
 

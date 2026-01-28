@@ -12,6 +12,18 @@ const labourSchema = new mongoose.Schema({
     trim: true,
     index: true
   },
+  state: {
+    type: String,
+    trim: true
+  },
+  district: {
+    type: String,
+    trim: true
+  },
+  taluku: {
+    type: String,
+    trim: true
+  },
   contactNumber: {
     type: String,
     trim: true,
